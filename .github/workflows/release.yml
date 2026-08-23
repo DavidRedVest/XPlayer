@@ -20,7 +20,6 @@ jobs:
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}
-          modules: "qtsvg"
 
       - name: Install build dependencies
         run: brew install sdl2 nasm pkg-config dylibbundler
@@ -73,7 +72,6 @@ jobs:
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}
-          modules: "qtsvg"
 
       - name: Install build dependencies
         run: |
@@ -137,8 +135,7 @@ jobs:
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}
-          arch: "win64_msvc2019_64"
-          modules: "qtsvg"
+          arch: "win64_msvc2022_64"
 
       - name: Configure
         shell: pwsh
