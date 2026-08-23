@@ -18,10 +18,18 @@ extern "C" {
 
 namespace {
 
-// localtime_r（可重入）而不是 player_v1 原来用的 localtime：多路摄像头可能
+// 可重入的 localtime，而不是 player_v1 原来用的 localtime：多路摄像头可能
 // 同一时刻各自在自己的线程里滚动新文件，用非线程安全的 localtime 会在内部
-// 静态缓冲区上打架。
-//
+// 静态缓冲区上打架。POSIX 是 localtime_r（参数顺序 time_t* 在前），MSVC 只有
+// localtime_s（参数顺序反过来，tm* 在前），两边都是线程安全的，包一层统一。
+void ThreadSafeLocalTime(std::time_t t, std::tm& tm_buf) {
+#ifdef _WIN32
+    localtime_s(&tm_buf, &t);
+#else
+    localtime_r(&t, &tm_buf);
+#endif
+}
+
 // 文件名格式固定为 "<时间戳>_<序列号>_<窗口编号>.mp4"：时间戳是这一段
 // 文件开始写的时刻，序列号是这次录像（从点"录制"到点"关闭录制"算一次）
 // 里的分段计数（从 1 开始），窗口编号是触发这次录像的画面格子编号
@@ -29,7 +37,7 @@ namespace {
 std::string NextSegmentPath(const std::string& save_dir, int window_index, int seq) {
     auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     std::tm tm_buf{};
-    localtime_r(&t, &tm_buf);
+    ThreadSafeLocalTime(t, tm_buf);
     std::ostringstream ss;
     ss << save_dir << "/" << std::put_time(&tm_buf, "%Y_%m_%d_%H_%M_%S") << "_" << seq << "_"
        << window_index << ".mp4";

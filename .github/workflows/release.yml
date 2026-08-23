@@ -81,7 +81,7 @@ jobs:
       - name: Stage SDL2 into a FFMPEG_ROOT-style layout
         run: |
           mkdir -p "$GITHUB_WORKSPACE/common-libs/lib" "$GITHUB_WORKSPACE/common-libs/include"
-          cp -a "$(pkg-config --variable=libdir sdl2)"/libSDL2.so* "$GITHUB_WORKSPACE/common-libs/lib/"
+          cp -aL "$(pkg-config --variable=libdir sdl2)"/libSDL2*.so* "$GITHUB_WORKSPACE/common-libs/lib/"
           cp -a /usr/include/SDL2 "$GITHUB_WORKSPACE/common-libs/include/"
 
       - name: Cache FFmpeg build
