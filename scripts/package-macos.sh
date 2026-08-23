@@ -60,6 +60,23 @@ for dylib in "$STAGED_APP"/Contents/Frameworks/*.dylib; do
     [ -f "$dylib" ] && dedupe_rpaths "$dylib"
 done
 
+# Homebrew's "sdl2" formula is an alias for sdl2-compat: an SDL2-ABI shim
+# that dlopen()s a real SDL3 dylib at runtime (never an LC_LOAD_DYLIB
+# dependency) -- otool -L / dylibbundler can't see it at all, so it never
+# gets bundled, and the shipped app fails at startup with "Failed loading
+# SDL3 library". sdl2-compat's first dlopen candidate is literally
+# "@loader_path/libSDL3.dylib" (i.e. right next to itself), so dropping a
+# real copy there is enough; no rpath/install-name changes needed on it
+# since nothing links against it directly.
+sdl3_dylib="$(brew --prefix sdl3 2>/dev/null)/lib/libSDL3.dylib"
+if [ -e "$sdl3_dylib" ]; then
+    sdl3_real="$(readlink -f "$sdl3_dylib" 2>/dev/null || python3 -c "import os,sys; print(os.path.realpath(sys.argv[1]))" "$sdl3_dylib")"
+    cp "$sdl3_real" "$STAGED_APP/Contents/Frameworks/$(basename "$sdl3_real")"
+    ln -sf "$(basename "$sdl3_real")" "$STAGED_APP/Contents/Frameworks/libSDL3.dylib"
+    install_name_tool -id "@executable_path/../Frameworks/$(basename "$sdl3_real")" \
+        "$STAGED_APP/Contents/Frameworks/$(basename "$sdl3_real")"
+fi
+
 # Ad-hoc (temporary) signature: no developer certificate, no notarization.
 codesign --force --deep -s - "$STAGED_APP"
 codesign -dv --verbose=4 "$STAGED_APP" 2>&1 | grep -i "signature"
