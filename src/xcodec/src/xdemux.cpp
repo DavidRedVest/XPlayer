@@ -1,5 +1,7 @@
 #include "xdemux.h"
 
+#include <mutex>
+
 #include "xtools.h"
 
 extern "C" {
@@ -7,6 +9,18 @@ extern "C" {
 }
 
 using namespace std;
+
+namespace {
+// avformat_network_init() 在 Windows 上会做 WSAStartup（初始化 Winsock），
+// 不调用的话，任何用到网络协议（rtsp/tcp/udp）的 avio 操作都可能崩溃——
+// macOS/Linux 的 POSIX socket 不需要这一步，所以本地文件回放和 macOS/Linux
+// 上的直播都掩盖了这个问题，只有 Windows 上打开网络流会炸。整个进程只需要
+// 调用一次，用 call_once 保证不管从哪个 XDemux 实例第一次打开流都会触发。
+void EnsureNetworkInit() {
+    static std::once_flag once;
+    std::call_once(once, [] { avformat_network_init(); });
+}
+}  // namespace
 
 #define BERR(err)         \
     if (0 != (err)) {     \
@@ -25,6 +39,8 @@ using namespace std;
     }
 
 bool XDemux::Open(const char* url) {
+    EnsureNetworkInit();
+
     // 先分配、装好中断回调，再发起连接——不然只有连接*成功*之后 set_c()
     // 才会挂上回调，期间万一连接本身卡住（弱网/重连时摄像头没反应），
     // 这个线程就没有任何办法被打断，Stop() 也会跟着永远卡住。
