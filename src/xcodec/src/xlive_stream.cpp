@@ -108,7 +108,15 @@ void XLiveStream::OpenWorker(const std::string& url, bool enable_audio) {
         return;
     }
 
-    if (!impl_->video_decode.Open(vp->para)) {
+    // thread_count=1：FFmpeg 默认给多线程 h264 解码开的是帧级流水线（内部
+    // 跨帧缓冲、参考帧管理更复杂），一旦输入有任何不规则（网络抖动、丢包
+    // 重传、RTSP 连接时机不巧落在 GOP 中间），就可能在参考帧/协同定位信息
+    // 还没备齐时触发解码器内部错误（"reference picture missing"/"co
+    // located POCs unavailable" 这类）——xplayback.cpp 里回放场景已经复现
+    // 并验证过同一根因（连续单帧步进必现），当时改成单线程解决，这里直播
+    // 场景补上同样的设置。单线程软解码 1080p~2K 这种规模早就够实时用，不
+    // 构成性能问题。
+    if (!impl_->video_decode.Open(vp->para, /*thread_count=*/1)) {
         LOGERROR("XLiveStream::Open: video decode.Open failed");
         impl_->demux.Stop();
         return;

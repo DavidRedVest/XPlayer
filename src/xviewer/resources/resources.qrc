@@ -1,5 +1,14 @@
 <RCC>
     <qresource prefix="/">
         <file>player.svg</file>
+        <file>icons/skip_back_10s.svg</file>
+        <file>icons/step_back.svg</file>
+        <file>icons/play.svg</file>
+        <file>icons/pause.svg</file>
+        <file>icons/step_forward.svg</file>
+        <file>icons/skip_forward_10s.svg</file>
+        <file>icons/speed.svg</file>
+        <file>icons/loop.svg</file>
+        <file>icons/single_play.svg</file>
     </qresource>
 </RCC>

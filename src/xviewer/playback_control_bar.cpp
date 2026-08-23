@@ -5,10 +5,12 @@
 
 #include <QComboBox>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QSize>
 #include <QSlider>
 #include <QStringList>
 #include <QTimer>
@@ -67,14 +69,32 @@ int ClosestSpeedIndex(QComboBox* combo, double speed) {
     }
     return best;
 }
+
+constexpr int kIconSize = 20;
+
+// 纯图标按钮（不带文字），文字挪到 tooltip 里——跟用户提供的图标搭配的
+// 播放器传输条常见样式。
+QPushButton* MakeIconButton(QWidget* parent, const QString& icon_path, const QString& tooltip) {
+    auto* btn = new QPushButton(parent);
+    btn->setIcon(QIcon(icon_path));
+    btn->setIconSize(QSize(kIconSize, kIconSize));
+    btn->setToolTip(tooltip);
+    return btn;
+}
 }  // namespace
 
 PlaybackControlBar::PlaybackControlBar(QWidget* parent) : QWidget(parent) {
-    play_pause_btn_ = new QPushButton("暂停", this);
-    auto* step_back_btn = new QPushButton("后退一帧", this);
-    auto* skip_back_btn = new QPushButton("后退10秒", this);
-    auto* skip_forward_btn = new QPushButton("快进10秒", this);
-    auto* step_forward_btn = new QPushButton("前进一帧", this);
+    // 顺序：后退10秒、后退一帧、播放/暂停、前进一帧、快进10秒、倍速播放、
+    // 单次播放/循环播放——之后是进度条、时长、跳转框（位置不变）。
+    auto* skip_back_btn = MakeIconButton(this, ":/icons/skip_back_10s.svg", "后退10秒");
+    auto* step_back_btn = MakeIconButton(this, ":/icons/step_back.svg", "后退一帧");
+    play_pause_btn_ = MakeIconButton(this, ":/icons/pause.svg", "暂停");
+    auto* step_forward_btn = MakeIconButton(this, ":/icons/step_forward.svg", "前进一帧");
+    auto* skip_forward_btn = MakeIconButton(this, ":/icons/skip_forward_10s.svg", "快进10秒");
+
+    auto* speed_icon = new QLabel(this);
+    speed_icon->setPixmap(QIcon(":/icons/speed.svg").pixmap(kIconSize, kIconSize));
+    speed_icon->setToolTip("倍速播放");
 
     speed_combo_ = new QComboBox(this);
     speed_combo_->addItem("0.5x", 0.5);
@@ -91,7 +111,7 @@ PlaybackControlBar::PlaybackControlBar(QWidget* parent) : QWidget(parent) {
     connect(step_forward_btn, &QPushButton::clicked, this, &PlaybackControlBar::OnStepForward);
     connect(speed_combo_, &QComboBox::currentIndexChanged, this, &PlaybackControlBar::OnSpeedChanged);
 
-    loop_btn_ = new QPushButton("单次播放", this);
+    loop_btn_ = MakeIconButton(this, ":/icons/single_play.svg", "单次播放");
     loop_btn_->setCheckable(true);
     loop_btn_->setChecked(false);  // 默认单次播放
     connect(loop_btn_, &QPushButton::toggled, this, &PlaybackControlBar::OnLoopToggled);
@@ -108,11 +128,12 @@ PlaybackControlBar::PlaybackControlBar(QWidget* parent) : QWidget(parent) {
     connect(jump_edit_, &QLineEdit::returnPressed, this, &PlaybackControlBar::OnJumpToTimestamp);
 
     auto* layout = new QHBoxLayout(this);
-    layout->addWidget(play_pause_btn_);
-    layout->addWidget(step_back_btn);
     layout->addWidget(skip_back_btn);
-    layout->addWidget(skip_forward_btn);
+    layout->addWidget(step_back_btn);
+    layout->addWidget(play_pause_btn_);
     layout->addWidget(step_forward_btn);
+    layout->addWidget(skip_forward_btn);
+    layout->addWidget(speed_icon);
     layout->addWidget(speed_combo_);
     layout->addWidget(loop_btn_);
     layout->addWidget(seek_slider_, 1);
@@ -198,7 +219,8 @@ void PlaybackControlBar::OnSliderReleased() {
 
 void PlaybackControlBar::OnLoopToggled(bool checked) {
     loop_enabled_ = checked;
-    loop_btn_->setText(checked ? "循环播放" : "单次播放");
+    loop_btn_->setIcon(QIcon(checked ? ":/icons/loop.svg" : ":/icons/single_play.svg"));
+    loop_btn_->setToolTip(checked ? "循环播放" : "单次播放");
 }
 
 void PlaybackControlBar::OnJumpToTimestamp() {
@@ -228,7 +250,8 @@ void PlaybackControlBar::UpdatePosition() {
     }
     position_label_->setText(FormatMs(position) + " / " + FormatMs(duration));
     bool playing = target_->IsPlaying();
-    play_pause_btn_->setText(playing ? "暂停" : "播放");
+    play_pause_btn_->setIcon(QIcon(playing ? ":/icons/pause.svg" : ":/icons/play.svg"));
+    play_pause_btn_->setToolTip(playing ? "暂停" : "播放");
 
     // 循环播放：读到文件末尾时 XPlayback::Main() 会自己把状态停在"暂停"，
     // 这里检测到"停在结尾附近"且用户开了循环，就重新跳回开头继续播放。
