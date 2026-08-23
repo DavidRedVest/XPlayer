@@ -1,5 +1,6 @@
 #include "x_gl_video_widget.h"
 
+#include <QDebug>
 #include <QMetaObject>
 #include <cstring>
 
@@ -51,12 +52,24 @@ XGLVideoWidget::~XGLVideoWidget() {
 void XGLVideoWidget::initializeGL() {
     initializeOpenGLFunctions();
 
-    program_.addShaderFromSourceCode(QOpenGLShader::Vertex, kVertexShader);
-    program_.addShaderFromSourceCode(QOpenGLShader::Fragment, kFragmentShader);
+    // 这几步以前完全不检查返回值——着色器编译/链接失败会被静默吞掉，后面
+    // 拿一个没链接成功的 program 去 bind/draw，不同驱动的行为没有保证（有
+    // 的只是不画东西，有的直接崩）。哪一步失败都打日志，方便直接从这里定位，
+    // 而不是等崩溃了才回头怀疑到这里。
+    if (!program_.addShaderFromSourceCode(QOpenGLShader::Vertex, kVertexShader)) {
+        qWarning() << "XGLVideoWidget: vertex shader compile failed:" << program_.log();
+    }
+    if (!program_.addShaderFromSourceCode(QOpenGLShader::Fragment, kFragmentShader)) {
+        qWarning() << "XGLVideoWidget: fragment shader compile failed:" << program_.log();
+    }
     program_.bindAttributeLocation("vertexIn", kVertexAttr);
     program_.bindAttributeLocation("textureIn", kTexCoordAttr);
-    program_.link();
-    program_.bind();
+    if (!program_.link()) {
+        qWarning() << "XGLVideoWidget: shader program link failed:" << program_.log();
+    }
+    if (!program_.bind()) {
+        qWarning() << "XGLVideoWidget: shader program bind failed:" << program_.log();
+    }
 
     static const GLfloat kVertices[] = {
         -1.0f, -1.0f,
