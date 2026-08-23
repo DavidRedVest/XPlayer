@@ -40,6 +40,7 @@ private:
     void OnDeleteCamera();
     void OnLiveGridItemDropped(CameraTileWidget* tile, QListWidget* source, int row);
     void OnPlaybackGridItemDropped(CameraTileWidget* tile, QListWidget* source, int row);
+    void OnRecordingsListContextMenu(const QPoint& pos);
     void UpdateRecordingIndicators();
     void ToggleFullScreen();
     void ToggleLeftPanel();

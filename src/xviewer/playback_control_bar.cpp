@@ -1,19 +1,25 @@
 #include "playback_control_bar.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSlider>
+#include <QStringList>
 #include <QTimer>
 
 #include "camera_tile_widget.h"
 
 namespace {
 constexpr long long kSkipMs = 10000;
+// 播放到结尾时，最后一帧的 pts 不一定精确等于 duration_ms_，留点容差再判定
+// "已经到结尾了"，避免循环判定一直卡在临界值附近来回抖动。
+constexpr long long kEndToleranceMs = 500;
 
 QString FormatMs(long long ms) {
     if (ms < 0) {
@@ -26,6 +32,25 @@ QString FormatMs(long long ms) {
     return hh > 0
                ? QString("%1:%2:%3").arg(hh).arg(mm, 2, 10, QChar('0')).arg(ss, 2, 10, QChar('0'))
                : QString("%1:%2").arg(mm, 2, 10, QChar('0')).arg(ss, 2, 10, QChar('0'));
+}
+
+// 解析用户在跳转输入框里敲的时间：支持 "HH:MM:SS" / "MM:SS" / 纯秒数三种
+// 格式。解析失败返回 -1（调用方直接忽略这次跳转，不弹错误框）。
+long long ParseTimestampMs(const QString& text) {
+    QStringList parts = text.trimmed().split(':');
+    if (parts.isEmpty() || parts.size() > 3) {
+        return -1;
+    }
+    long long total_sec = 0;
+    for (const QString& part : parts) {
+        bool ok = false;
+        int value = part.toInt(&ok);
+        if (!ok || value < 0) {
+            return -1;
+        }
+        total_sec = total_sec * 60 + value;
+    }
+    return total_sec * 1000;
 }
 
 // 倍速下拉框里找跟 speed 最接近的一项的下标（浮点直接比较可能因为存取
@@ -66,11 +91,21 @@ PlaybackControlBar::PlaybackControlBar(QWidget* parent) : QWidget(parent) {
     connect(step_forward_btn, &QPushButton::clicked, this, &PlaybackControlBar::OnStepForward);
     connect(speed_combo_, &QComboBox::currentIndexChanged, this, &PlaybackControlBar::OnSpeedChanged);
 
+    loop_btn_ = new QPushButton("单次播放", this);
+    loop_btn_->setCheckable(true);
+    loop_btn_->setChecked(false);  // 默认单次播放
+    connect(loop_btn_, &QPushButton::toggled, this, &PlaybackControlBar::OnLoopToggled);
+
     seek_slider_ = new QSlider(Qt::Horizontal, this);
     connect(seek_slider_, &QSlider::sliderPressed, this, &PlaybackControlBar::OnSliderPressed);
     connect(seek_slider_, &QSlider::sliderReleased, this, &PlaybackControlBar::OnSliderReleased);
 
     position_label_ = new QLabel("00:00 / 00:00", this);
+
+    jump_edit_ = new QLineEdit(this);
+    jump_edit_->setPlaceholderText("mm:ss 跳转");
+    jump_edit_->setFixedWidth(80);
+    connect(jump_edit_, &QLineEdit::returnPressed, this, &PlaybackControlBar::OnJumpToTimestamp);
 
     auto* layout = new QHBoxLayout(this);
     layout->addWidget(play_pause_btn_);
@@ -79,8 +114,10 @@ PlaybackControlBar::PlaybackControlBar(QWidget* parent) : QWidget(parent) {
     layout->addWidget(skip_forward_btn);
     layout->addWidget(step_forward_btn);
     layout->addWidget(speed_combo_);
+    layout->addWidget(loop_btn_);
     layout->addWidget(seek_slider_, 1);
     layout->addWidget(position_label_);
+    layout->addWidget(jump_edit_);
 
     auto* timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, &PlaybackControlBar::UpdatePosition);
@@ -159,6 +196,24 @@ void PlaybackControlBar::OnSliderReleased() {
     }
 }
 
+void PlaybackControlBar::OnLoopToggled(bool checked) {
+    loop_enabled_ = checked;
+    loop_btn_->setText(checked ? "循环播放" : "单次播放");
+}
+
+void PlaybackControlBar::OnJumpToTimestamp() {
+    if (!target_) {
+        return;
+    }
+    long long ms = ParseTimestampMs(jump_edit_->text());
+    if (ms < 0) {
+        return;  // 解析失败：忽略这次跳转，不弹错误框
+    }
+    ms = std::clamp(ms, 0LL, target_->DurationMs());
+    target_->SeekTo(ms);
+    jump_edit_->clear();
+}
+
 void PlaybackControlBar::UpdatePosition() {
     if (!target_) {
         return;
@@ -172,5 +227,13 @@ void PlaybackControlBar::UpdatePosition() {
         seek_slider_->setValue(static_cast<int>(position));
     }
     position_label_->setText(FormatMs(position) + " / " + FormatMs(duration));
-    play_pause_btn_->setText(target_->IsPlaying() ? "暂停" : "播放");
+    bool playing = target_->IsPlaying();
+    play_pause_btn_->setText(playing ? "暂停" : "播放");
+
+    // 循环播放：读到文件末尾时 XPlayback::Main() 会自己把状态停在"暂停"，
+    // 这里检测到"停在结尾附近"且用户开了循环，就重新跳回开头继续播放。
+    if (loop_enabled_ && !playing && duration > 0 && position >= duration - kEndToleranceMs) {
+        target_->SeekTo(0);
+        target_->Play();
+    }
 }

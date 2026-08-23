@@ -1,14 +1,19 @@
 #include "main_window.h"
 
+#include <QAction>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
 #include <QListWidgetItem>
+#include <QMenu>
 #include <QMessageBox>
+#include <QProcess>
 #include <QPushButton>
 #include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include "camera_config.h"
@@ -42,6 +47,18 @@ QString DescribeRecordingFile(const QFileInfo& fi) {
                              .arg(parts[0], parts[1], parts[2])
                              .arg(parts[3], parts[4], parts[5]);
     return QString("%1  窗口%2").arg(timestamp, parts[7]);
+}
+
+// 在系统文件管理器里定位到这个文件。macOS/Windows 都有"打开文件夹并选中
+// 这个文件"的原生方式；Linux 没有统一标准，退化成只打开所在文件夹。
+void RevealInFileManager(const QString& path) {
+#if defined(Q_OS_MACOS)
+    QProcess::startDetached("open", {"-R", path});
+#elif defined(Q_OS_WIN)
+    QProcess::startDetached("explorer", {"/select,", QDir::toNativeSeparators(path)});
+#else
+    QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(path).absolutePath()));
+#endif
 }
 }  // namespace
 
@@ -81,6 +98,9 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     // 到格子上让那一格回放这个文件。
     recordings_list_ = new QListWidget(this);
     recordings_list_->setDragEnabled(true);
+    recordings_list_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(recordings_list_, &QListWidget::customContextMenuRequested, this,
+            &MainWindow::OnRecordingsListContextMenu);
 
     recordings_panel_ = new QWidget(this);
     auto* recordings_layout = new QVBoxLayout(recordings_panel_);
@@ -242,6 +262,22 @@ void MainWindow::OnPlaybackGridItemDropped(CameraTileWidget* tile, QListWidget* 
     QVariant data = item->data(Qt::UserRole);
     if (data.isValid()) {
         tile->OpenPlaybackFile(data.toString());
+    }
+}
+
+void MainWindow::OnRecordingsListContextMenu(const QPoint& pos) {
+    QListWidgetItem* item = recordings_list_->itemAt(pos);
+    if (!item) {
+        return;
+    }
+    QString path = item->data(Qt::UserRole).toString();
+    if (path.isEmpty()) {
+        return;
+    }
+    QMenu menu(this);
+    QAction* reveal_action = menu.addAction("打开文件所在位置");
+    if (menu.exec(recordings_list_->mapToGlobal(pos)) == reveal_action) {
+        RevealInFileManager(path);
     }
 }
 

@@ -5,6 +5,7 @@
 
 class QComboBox;
 class QLabel;
+class QLineEdit;
 class QPushButton;
 class QSlider;
 class CameraTileWidget;
@@ -38,6 +39,8 @@ private slots:
     void OnSpeedChanged(int index);
     void OnSliderPressed();
     void OnSliderReleased();
+    void OnLoopToggled(bool checked);
+    void OnJumpToTimestamp();
     void UpdatePosition();
 
 private:
@@ -46,7 +49,10 @@ private:
     QSlider* seek_slider_;
     QLabel* position_label_;
     QComboBox* speed_combo_;
+    QPushButton* loop_btn_;
+    QLineEdit* jump_edit_;
     bool slider_dragging_ = false;
+    bool loop_enabled_ = false;
 };
 
 #endif  // XVIEWER_PLAYBACK_CONTROL_BAR_H_
