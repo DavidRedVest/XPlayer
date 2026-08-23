@@ -10,5 +10,8 @@
         <file>icons/speed.svg</file>
         <file>icons/loop.svg</file>
         <file>icons/single_play.svg</file>
+        <file>icons/add.svg</file>
+        <file>icons/edit.svg</file>
+        <file>icons/delete.svg</file>
     </qresource>
 </RCC>

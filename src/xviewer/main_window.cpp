@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QListWidget>
 #include <QListWidgetItem>
@@ -12,6 +13,7 @@
 #include <QMessageBox>
 #include <QProcess>
 #include <QPushButton>
+#include <QSize>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -60,6 +62,18 @@ void RevealInFileManager(const QString& path) {
     QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(path).absolutePath()));
 #endif
 }
+
+constexpr int kIconSize = 20;
+
+// 纯图标按钮（不带文字），跟 PlaybackControlBar 的传输条按钮同一个风格——
+// 文字挪到 tooltip 里。
+QPushButton* MakeIconButton(QWidget* parent, const QString& icon_path, const QString& tooltip) {
+    auto* btn = new QPushButton(parent);
+    btn->setIcon(QIcon(icon_path));
+    btn->setIconSize(QSize(kIconSize, kIconSize));
+    btn->setToolTip(tooltip);
+    return btn;
+}
 }  // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
@@ -75,9 +89,9 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     camera_list_ = new QListWidget(this);
     camera_list_->setDragEnabled(true);
 
-    auto* add_btn = new QPushButton("新增", this);
-    auto* edit_btn = new QPushButton("修改", this);
-    auto* delete_btn = new QPushButton("删除", this);
+    auto* add_btn = MakeIconButton(this, ":/icons/add.svg", "新增");
+    auto* edit_btn = MakeIconButton(this, ":/icons/edit.svg", "修改");
+    auto* delete_btn = MakeIconButton(this, ":/icons/delete.svg", "删除");
     connect(add_btn, &QPushButton::clicked, this, &MainWindow::OnAddCamera);
     connect(edit_btn, &QPushButton::clicked, this, &MainWindow::OnEditCamera);
     connect(delete_btn, &QPushButton::clicked, this, &MainWindow::OnDeleteCamera);
