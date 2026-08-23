@@ -1,43 +1,45 @@
+**中文** | [English](README.en.md)
+
 # XPlayer (player_v2)
 
-XPlayer is an NVR-style multi-camera RTSP viewer and recorder — a from-scratch, cross-platform rebuild (CMake + Qt6) of a prior Windows-only (MSVC/Qt5) application. It decodes and renders multiple live RTSP streams simultaneously, records them to disk, and plays back recordings with seek/step/variable-speed controls.
+XPlayer 是一个 NVR 风格的多摄像头 RTSP 预览/录像播放器——对一个早期 Windows-only（MSVC/Qt5）应用的从零跨平台重写（CMake + Qt6）。它可以同时解码渲染多路实时 RTSP 流、录像到磁盘，并支持带 seek/单帧步进/倍速的录像回放。
 
-Currently developed and verified on **macOS**. The codebase itself has no OS-specific code paths (pure Qt6 Widgets + FFmpeg + SDL2), so Windows and Linux builds are expected to work once each platform's dependencies are wired up — see [Platform status](#platform-status).
+目前在 **macOS** 上开发和验证。代码本身没有任何平台专属代码路径（纯 Qt6 Widgets + FFmpeg + SDL2），配好各平台的依赖后 Windows/Linux 预期也能构建——见下方 [平台状态](#平台状态)。
 
-## Features
+## 功能特性
 
-- **Multi-camera live grid** — 1/4/9/16-way split-screen preview, drag a camera from the list onto any tile to open it (sub-stream, for preview bandwidth).
-- **Recording** — manual per-tile or per-grid start/stop, main-stream quality, automatic segment rotation (default 45 min/segment), written next to the executable.
-- **Recording playback** — a second, independent grid page for browsing and playing back recorded files: play/pause, ±1 frame step, ±10s skip, seek slider, and variable playback speed (0.25x–4x) with **pitch-preserving audio** (FFmpeg's `atempo` filter, WSOLA-based — same technique VLC/mpv use — so sped-up audio doesn't sound high-pitched/chipmunked).
-- **Live and playback are fully independent pages** — switching between them never stops streams or recordings running in the background.
-- **Per-tile audio selection** — click a tile to make it the audible one; live audio always follows the current single-click selection.
-- **Fullscreen** — double-click a tile to fill the grid with it, or use the real OS-level fullscreen toggle (excludes the camera list panel).
-- **Camera list management** — add/edit/delete cameras (name + main/sub RTSP URLs), persisted via `QSettings`.
-- **Per-tile overlays** — live resolution/fps readout, recording indicator with elapsed time.
-- **Collapsible side panel** — hide/show the camera or recordings list independently of fullscreen.
+- **多摄像头实时网格** ——1/4/9/16 画面分屏预览，从摄像头列表拖一项到任意格子即可打开（用辅码流，节省预览带宽）。
+- **录像** ——按格子或整体手动开始/停止，用主码流保证画质，自动按段轮转（默认每段 45 分钟），写在可执行程序旁边。
+- **录像回放** ——独立的第二个网格页面，用于浏览和播放录像文件：播放/暂停、±1 帧步进、±10 秒跳转、进度条拖动、可变倍速播放（0.25x–4x），并且**倍速播放时音频保调**（基于 FFmpeg 的 `atempo` 滤镜，WSOLA 算法——跟 VLC/mpv 用的是同一技术路线，所以加速播放时声音不会变尖变"忽悠"）。
+- **直播和回放是完全独立的两个页面** ——互相切换不会停止后台正在跑的流或录像。
+- **每格独立选择声音** ——单击某一格让它出声音；实时声音永远跟随当前单击选中的格子。
+- **全屏** ——双击某一格让它填满整个网格区域，也支持真正的操作系统级全屏切换（不含摄像头列表面板）。
+- **摄像头列表管理** ——增/改/删摄像头（名称 + 主/辅码流 RTSP 地址），通过 `QSettings` 持久化。
+- **每格叠加信息** ——实时分辨率/帧率显示，录像状态及已录制时长提示。
+- **可折叠侧边栏** ——可独立于全屏状态显示/隐藏摄像头或录像列表。
 
-## Architecture
+## 架构
 
-Two CMake targets in one repo:
+一个仓库里两个 CMake 目标：
 
-- **`xcodec`** (`src/xcodec/`) — the decode/encode engine, built as a shared library, no Qt dependency. Wraps FFmpeg (demux/decode/encode/mux/filter) and SDL2 (video render + audio output) behind a small public C++ interface (`include/xcodec/`: `XLiveStream`, `XPlayback`, `XRecorder`, `XVideoFrame`/`IXVideoSink`). Internally built around threaded pipeline stages (demux → decode → render/audio) chained via a producer/consumer pattern, mirroring the predecessor's `XThread`-based design but rewritten from scratch.
-- **`xviewer`** (`src/xviewer/`) — the Qt6 Widgets GUI application. `MainWindow` owns two independent `TileGridView` pages (live / playback), each managing its own array of `CameraTileWidget` tiles (a `QOpenGLWidget`-based YUV renderer that also owns an `XLiveStream` or `XPlayback` instance per tile).
+- **`xcodec`**（`src/xcodec/`）——解码/编码引擎，编译成共享库，不依赖 Qt。把 FFmpeg（解复用/解码/编码/复用/滤镜）和 SDL2（视频渲染 + 音频输出）包装在一个小巧的公开 C++ 接口后面（`include/xcodec/`：`XLiveStream`、`XPlayback`、`XRecorder`、`XVideoFrame`/`IXVideoSink`）。内部由多个线程化的流水线阶段（解复用 → 解码 → 渲染/音频）通过生产者/消费者模式串联而成，设计思路上承接前代的 `XThread` 结构，但代码是重新写的。
+- **`xviewer`**（`src/xviewer/`）——Qt6 Widgets GUI 应用。`MainWindow` 持有两个独立的 `TileGridView` 页面（直播/回放），各自管理一组 `CameraTileWidget` 格子（基于 `QOpenGLWidget` 的 YUV 渲染器，每格还各自持有一个 `XLiveStream` 或 `XPlayback` 实例）。
 
-A small CLI tool, `tools/xcodec_probe`, exercises `xcodec` directly (open a stream, print frame stats, exit) without building the GUI — useful for isolating decode-engine issues from GUI issues.
+另外还有一个小型命令行工具 `tools/xcodec_probe`，可以在不构建 GUI 的情况下直接跑 `xcodec`（打开一路流、打印帧统计、退出）——方便把解码引擎的问题和 GUI 的问题分开排查。
 
-## Building
+## 构建
 
-### Requirements
+### 依赖要求
 
 - CMake 3.20+
-- A C++17 compiler
-- Qt 6.x, components: `Widgets`, `OpenGLWidgets`, `Svg`
-- FFmpeg (built/tested against 4.3.7) with `avformat`, `avcodec`, `avutil`, `avfilter`, `swresample`
+- 支持 C++17 的编译器
+- Qt 6.x，需要 `Widgets`、`OpenGLWidgets`、`Svg` 三个组件
+- FFmpeg（开发/测试用的是 4.3.7），需要 `avformat`、`avcodec`、`avutil`、`avfilter`、`swresample`
 - SDL2
 
-FFmpeg and SDL2 are consumed as pre-built dev packages (headers + import libs), not vendored or fetched by the build.
+FFmpeg 和 SDL2 都是以预编译开发包（头文件 + 导入库）的形式使用，构建脚本本身不会去拉取或打包它们。
 
-### Configure & build
+### 配置与构建
 
 ```sh
 cmake -B build \
@@ -48,35 +50,39 @@ cmake -B build \
 cmake --build build
 ```
 
-- `FFMPEG_ROOT` — install root containing FFmpeg's `include/` and `lib/` (headers + `avformat`/`avcodec`/`avutil`/`avfilter`/`swresample`).
-- `COMMON_LIBS_ROOT` — install root containing SDL2's `include/`/`lib/`.
-- `CMAKE_PREFIX_PATH` — Qt6's CMake package directory, so `find_package(Qt6 ...)` can locate it.
-- `PLAYER_V2_BUILD_XVIEWER` (default `OFF`) — build the Qt6 GUI app. Leave off to build just `xcodec` + `xcodec_probe`.
-- `PLAYER_V2_BUILD_TOOLS` (default `ON`) — build `xcodec_probe`.
+- `FFMPEG_ROOT` ——FFmpeg 安装根目录，需要包含 `include/` 和 `lib/`（头文件 + `avformat`/`avcodec`/`avutil`/`avfilter`/`swresample`）。
+- `COMMON_LIBS_ROOT` ——SDL2 安装根目录，需要包含 `include/`/`lib/`。
+- `CMAKE_PREFIX_PATH` ——Qt6 的 CMake 包目录，供 `find_package(Qt6 ...)` 查找。
+- `PLAYER_V2_BUILD_XVIEWER`（默认 `OFF`）——是否构建 Qt6 GUI 应用；不开的话只会构建 `xcodec` + `xcodec_probe`。
+- `PLAYER_V2_BUILD_TOOLS`（默认 `ON`）——是否构建 `xcodec_probe`。
 
-Build output (the `xviewer` app bundle/binary, `xcodec` shared library, and `xcodec_probe`) lands under `build/`.
+构建产物（`xviewer` 应用包/可执行文件、`xcodec` 共享库、`xcodec_probe`）都在 `build/` 目录下。
 
-## Repository layout
+## 下载预编译版本
+
+每个版本 tag（如 `v0.1.0`）都会通过 GitHub Actions 自动构建 Windows/Linux/macOS 三个平台的可执行程序并发布到本仓库的 [Releases](../../releases) 页面，解压即可运行，不需要自己配置依赖。macOS 版本使用临时（ad-hoc）签名，首次打开需要在"系统设置 → 隐私与安全性"里手动放行一次。
+
+## 目录结构
 
 ```
-CMakeLists.txt          top-level: dependency paths, subdirectory wiring
+CMakeLists.txt          顶层：依赖路径、子目录接入
 src/
-  xcodec/                decode/encode engine (shared library, no Qt)
-    include/xcodec/       public API headers
-    src/                  implementation
-  xviewer/                Qt6 GUI application
+  xcodec/                解码/编码引擎（共享库，不依赖 Qt）
+    include/xcodec/       公开 API 头文件
+    src/                  实现
+  xviewer/                Qt6 GUI 应用
 tools/
-  xcodec_probe/           CLI smoke-test tool for the xcodec engine
+  xcodec_probe/           xcodec 引擎的命令行冒烟测试工具
 ```
 
-## Platform status
+## 平台状态
 
-| Platform | Status |
+| 平台 | 状态 |
 |---|---|
-| macOS | Actively developed and verified |
-| Windows | Not yet built/verified — no known platform-specific blockers in source, needs a Windows FFmpeg/SDL2/Qt6 toolchain wired up |
-| Linux | Not yet built/verified — no known platform-specific blockers in source, needs a Linux FFmpeg/SDL2/Qt6 toolchain wired up |
+| macOS | 持续开发和验证中 |
+| Windows | 尚未在真机上构建/验证过——源码里没有发现平台专属的阻碍，CI 流水线已配置好 Windows 构建 |
+| Linux | 尚未在真机上构建/验证过——源码里没有发现平台专属的阻碍，CI 流水线已配置好 Linux 构建 |
 
-## License
+## 许可证
 
-Not yet specified.
+尚未指定。
