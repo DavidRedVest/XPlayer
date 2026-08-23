@@ -57,8 +57,13 @@ while [ ${#queue[@]} -gt 0 ]; do
     done
 done
 
-# Qt needs its xcb platform plugin to create a window at all.
-find "$QT_DIR" -name "libqxcb.so" -exec cp {} "$APP_DIR/lib/plugins/platforms/" \;
+# Qt needs its xcb platform plugin to create a window at all. There should be
+# exactly one match under a real Qt install root; -print -quit (rather than
+# -exec cp on every match) also means a too-broad QT_DIR can't make this
+# rediscover and try to copy the file it just wrote onto itself.
+qxcb="$(find "$QT_DIR" -name "libqxcb.so" -print -quit)"
+[ -n "$qxcb" ] || { echo "error: libqxcb.so not found under $QT_DIR" >&2; exit 1; }
+cp "$qxcb" "$APP_DIR/lib/plugins/platforms/"
 
 # Everything above still carries the CI build machine's absolute RPATH
 # (pointing into the build/dependency dirs) since that's what let `ldd`
