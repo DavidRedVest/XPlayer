@@ -32,10 +32,16 @@ target_link_libraries(xviewer PRIVATE
     Qt6::Svg
 )
 
-set_source_files_properties(resources/player.icns PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
-
-set_target_properties(xviewer PROPERTIES
-    MACOSX_BUNDLE TRUE
-    MACOSX_BUNDLE_ICON_FILE player.icns
-    INSTALL_RPATH "${FFMPEG_ROOT}/lib;${COMMON_LIBS_ROOT}/lib"
-)
+if(APPLE)
+    set_source_files_properties(resources/player.icns PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+    set_target_properties(xviewer PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_ICON_FILE player.icns
+        INSTALL_RPATH "${FFMPEG_ROOT}/lib;${COMMON_LIBS_ROOT}/lib"
+    )
+endif()
+# Linux: deliberately no custom RPATH here — leave CMake's default build-tree
+# RPATH (absolute paths into the CI build/dependency dirs) in place so the
+# packaging script's `ldd`-based dependency walk can still resolve everything
+# while still on the build machine. scripts/package-linux.sh uses `patchelf`
+# to rewrite the RPATH to a relative "$ORIGIN/lib" only in the staged copy.

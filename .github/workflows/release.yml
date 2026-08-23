@@ -1,0 +1,180 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+env:
+  QT_VERSION: "6.8.3"
+  FFMPEG_TAG: "n6.1.1"
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          modules: "qtsvg"
+
+      - name: Install build dependencies
+        run: brew install sdl2 nasm pkg-config dylibbundler
+
+      - name: Cache FFmpeg build
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: ffmpeg-install
+          key: ffmpeg-macos-${{ env.FFMPEG_TAG }}
+
+      - name: Build FFmpeg
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch ${{ env.FFMPEG_TAG }} --depth 1 https://github.com/FFmpeg/FFmpeg.git ffmpeg-src
+          cd ffmpeg-src
+          ./configure --prefix="$GITHUB_WORKSPACE/ffmpeg-install" \
+            --enable-shared --disable-static --disable-programs --disable-doc
+          make -j"$(sysctl -n hw.ncpu)"
+          make install
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPLAYER_V2_BUILD_XVIEWER=ON \
+            -DFFMPEG_ROOT="$GITHUB_WORKSPACE/ffmpeg-install" \
+            -DCOMMON_LIBS_ROOT="$(brew --prefix sdl2)" \
+            -DCMAKE_PREFIX_PATH="$Qt6_DIR"
+
+      - name: Build
+        run: cmake --build build --config Release -j"$(sysctl -n hw.ncpu)"
+
+      - name: Package
+        run: |
+          chmod +x scripts/package-macos.sh
+          COMMON_LIBS_ROOT="$(brew --prefix sdl2)" ./scripts/package-macos.sh build "XPlayer-macos-arm64.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: XPlayer-macos-arm64
+          path: XPlayer-macos-arm64.zip
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          modules: "qtsvg"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev nasm pkg-config patchelf libgl1-mesa-dev
+
+      - name: Stage SDL2 into a FFMPEG_ROOT-style layout
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/common-libs/lib" "$GITHUB_WORKSPACE/common-libs/include"
+          cp -a "$(pkg-config --variable=libdir sdl2)"/libSDL2.so* "$GITHUB_WORKSPACE/common-libs/lib/"
+          cp -a /usr/include/SDL2 "$GITHUB_WORKSPACE/common-libs/include/"
+
+      - name: Cache FFmpeg build
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: ffmpeg-install
+          key: ffmpeg-linux-${{ env.FFMPEG_TAG }}
+
+      - name: Build FFmpeg
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --branch ${{ env.FFMPEG_TAG }} --depth 1 https://github.com/FFmpeg/FFmpeg.git ffmpeg-src
+          cd ffmpeg-src
+          ./configure --prefix="$GITHUB_WORKSPACE/ffmpeg-install" \
+            --enable-shared --disable-static --disable-programs --disable-doc
+          make -j"$(nproc)"
+          make install
+
+      - name: Configure
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPLAYER_V2_BUILD_XVIEWER=ON \
+            -DFFMPEG_ROOT="$GITHUB_WORKSPACE/ffmpeg-install" \
+            -DCOMMON_LIBS_ROOT="$GITHUB_WORKSPACE/common-libs" \
+            -DCMAKE_PREFIX_PATH="$Qt6_DIR"
+
+      - name: Build
+        run: cmake --build build --config Release -j"$(nproc)"
+
+      - name: Package
+        env:
+          FFMPEG_ROOT: ${{ github.workspace }}/ffmpeg-install
+          COMMON_LIBS_ROOT: ${{ github.workspace }}/common-libs
+        run: |
+          chmod +x scripts/package-linux.sh
+          ./scripts/package-linux.sh build "$Qt6_DIR/../../.." "XPlayer-linux-x64.tar.gz"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: XPlayer-linux-x64
+          path: XPlayer-linux-x64.tar.gz
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: "win64_msvc2019_64"
+          modules: "qtsvg"
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -B build `
+            -DPLAYER_V2_BUILD_XVIEWER=ON `
+            -DFFMPEG_ROOT="${{ github.workspace }}\third_party\ffmpeg-win64" `
+            -DCOMMON_LIBS_ROOT="${{ github.workspace }}\third_party\ffmpeg-win64" `
+            -DCMAKE_PREFIX_PATH="$env:Qt6_DIR"
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Package
+        shell: pwsh
+        run: |
+          .\scripts\package-windows.ps1 -BuildDir build -FfmpegWin64Dir "third_party\ffmpeg-win64" -OutputZip "XPlayer-windows-x64.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: XPlayer-windows-x64
+          path: XPlayer-windows-x64.zip
+
+  release:
+    needs: [build-macos, build-linux, build-windows]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/XPlayer-macos-arm64/XPlayer-macos-arm64.zip
+            artifacts/XPlayer-linux-x64/XPlayer-linux-x64.tar.gz
+            artifacts/XPlayer-windows-x64/XPlayer-windows-x64.zip

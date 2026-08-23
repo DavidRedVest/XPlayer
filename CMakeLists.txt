@@ -4,7 +4,7 @@ project(player_v2 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# --- 第三方依赖路径（macOS 开发机默认值，其它机器可用 -D 覆盖） ---
+# --- 第三方依赖路径（默认值只对本机 macOS 开发环境有效，其它机器/CI 用 -D 覆盖） ---
 set(FFMPEG_ROOT "/Users/liszt/home/ffmpeg_dynamic_build/ffmpeg_4.3.7" CACHE PATH "FFmpeg 4.3.7 install root (contains include/ and lib/)")
 set(COMMON_LIBS_ROOT "/Users/liszt/home/ffmpeg_dynamic_build/common_libs" CACHE PATH "SDL2/x264/x265/fdk-aac install root (contains include/ and lib/)")
 
