@@ -1,0 +1,41 @@
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+
+find_package(Qt6 REQUIRED COMPONENTS Widgets OpenGLWidgets Svg)
+
+qt_add_executable(xviewer
+    main.cpp
+    main_window.h
+    main_window.cpp
+    x_gl_video_widget.h
+    x_gl_video_widget.cpp
+    camera_tile_widget.h
+    camera_tile_widget.cpp
+    camera_config.h
+    camera_config.cpp
+    camera_edit_dialog.h
+    camera_edit_dialog.cpp
+    recording_manager.h
+    recording_manager.cpp
+    tile_grid_view.h
+    tile_grid_view.cpp
+    playback_control_bar.h
+    playback_control_bar.cpp
+    resources/resources.qrc
+    resources/player.icns
+)
+
+target_link_libraries(xviewer PRIVATE
+    xcodec
+    Qt6::Widgets
+    Qt6::OpenGLWidgets
+    Qt6::Svg
+)
+
+set_source_files_properties(resources/player.icns PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+
+set_target_properties(xviewer PROPERTIES
+    MACOSX_BUNDLE TRUE
+    MACOSX_BUNDLE_ICON_FILE player.icns
+    INSTALL_RPATH "${FFMPEG_ROOT}/lib;${COMMON_LIBS_ROOT}/lib"
+)

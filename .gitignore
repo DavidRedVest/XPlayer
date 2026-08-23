@@ -1,0 +1,28 @@
+# Build output
+build/
+build-*/
+cmake-build-*/
+
+# Qt Creator
+CMakeLists.txt.user
+CMakeLists.txt.user.*
+
+# Editor / language server caches
+.cache/
+.vscode/
+.idea/
+compile_commands.json
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor backups
+*~
+*.swp
