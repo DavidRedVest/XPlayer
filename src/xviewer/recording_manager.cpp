@@ -1,9 +1,33 @@
 #include "recording_manager.h"
 
 #include <QCoreApplication>
+#include <QDebug>
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QStandardPaths>
 
 #include "xcodec/xrecorder.h"
+
+namespace {
+// 实际建目录 + 写一个探测文件确认真的可写——不能只看 mkpath() 的返回值，
+// macOS 上从浏览器下载、还没脱离隔离属性(quarantine)的未公证 App 会被
+// Gatekeeper "App Translocation" 挪到一个只读的临时挂载点运行，这种情况下
+// mkpath() 在某些 Qt/系统组合下仍可能返回 true，但目录其实没法真正写入。
+bool TryUseAsRecordingDir(const QString& path) {
+    QDir().mkpath(path);
+    QFileInfo probe_path(path);
+    if (!probe_path.exists() || !probe_path.isWritable()) {
+        return false;
+    }
+    QFile probe(path + "/.write_test");
+    if (!probe.open(QIODevice::WriteOnly)) {
+        return false;
+    }
+    probe.remove();
+    return true;
+}
+}  // namespace
 
 RecordingManager* RecordingManager::Instance() {
     static RecordingManager instance;
@@ -29,8 +53,20 @@ QString RecordingManager::RecordingDir() {
         }
     }
     QString path = dir.absoluteFilePath("recordings");
-    QDir().mkpath(path);
-    return path;
+    if (TryUseAsRecordingDir(path)) {
+        return path;
+    }
+
+    // 首选位置写不进去——最常见的原因是 macOS 上从浏览器下载、还没被
+    // Gatekeeper 信任(未公证的临时签名 App 常见)的应用被 App Translocation
+    // 挪到了一个只读的临时挂载点运行，这时"跟 App 同级"的目录天生不可能
+    // 写进去。退到一个保证可写的用户目录，并把实际用的位置打进日志，不能
+    // 让录像功能在这种情况下悄悄失效却没有任何提示。
+    QString fallback = QStandardPaths::writableLocation(QStandardPaths::MoviesLocation) +
+                        "/XPlayer/recordings";
+    qWarning() << "RecordingDir: cannot write to" << path << "-- falling back to" << fallback;
+    QDir().mkpath(fallback);
+    return fallback;
 }
 
 bool RecordingManager::Start(int window_index, const QString& url) {
