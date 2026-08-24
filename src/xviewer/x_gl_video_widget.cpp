@@ -52,6 +52,15 @@ XGLVideoWidget::~XGLVideoWidget() {
 void XGLVideoWidget::initializeGL() {
     initializeOpenGLFunctions();
 
+    // 排查 Windows 上一个几乎必现的访问违规崩溃（0xc0000005，出错模块显示
+    // unknown，看起来像是跳到了一个不属于任何已加载模块的地址）——先把实际
+    // 拿到的 GL 版本/厂商/渲染器字符串打出来，确认这台机器给的到底是不是
+    // 一个正常的、支持这份代码所需特性的上下文（比如某些虚拟机/远程桌面/
+    // 老显卡在没有合适驱动时，Windows 会退化到非常有限的软件 GL 实现）。
+    qWarning() << "XGLVideoWidget: GL_VERSION=" << reinterpret_cast<const char*>(glGetString(GL_VERSION))
+               << "GL_VENDOR=" << reinterpret_cast<const char*>(glGetString(GL_VENDOR))
+               << "GL_RENDERER=" << reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+
     // 这几步以前完全不检查返回值——着色器编译/链接失败会被静默吞掉，后面
     // 拿一个没链接成功的 program 去 bind/draw，不同驱动的行为没有保证（有
     // 的只是不画东西，有的直接崩）。哪一步失败都打日志，方便直接从这里定位，
@@ -173,6 +182,14 @@ void XGLVideoWidget::paintGL() {
     program_.bind();
 
     if (has_frame && width > 0 && height > 0) {
+        if (!logged_first_frame_) {
+            // 排查 Windows 上那个访问违规崩溃用的一次性埋点：确认渲染
+            // 流程真的跑到了"这一格拿到第一帧、开始建纹理/上传/画"这一步，
+            // 而不是更早的地方就已经出问题——崩溃发生在这行日志之前还是
+            // 之后，能把范围缩小一半。
+            qWarning() << "XGLVideoWidget: first real frame" << width << "x" << height;
+            logged_first_frame_ = true;
+        }
         EnsureTextures(width, height);
         UploadPlane(tex_y_, 0, y.data(), ys, width, height);
         UploadPlane(tex_u_, 1, u.data(), us, width / 2, height / 2);
@@ -202,6 +219,17 @@ void XGLVideoWidget::paintGL() {
 
     vao_.bind();
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    if (!logged_first_frame_error_check_) {
+        // 只在第一次真正画图之后查一次 glGetError——每帧都查会有性能开销，
+        // 这里只是要确认"画第一帧"这个动作本身有没有在 GL 层面留下错误。
+        GLenum err = glGetError();
+        if (err != GL_NO_ERROR) {
+            qWarning() << "XGLVideoWidget: glGetError after first glDrawArrays =" << err;
+        } else {
+            qWarning() << "XGLVideoWidget: first glDrawArrays OK, no GL error";
+        }
+        logged_first_frame_error_check_ = true;
+    }
     vao_.release();
 }
 
