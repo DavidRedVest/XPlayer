@@ -26,7 +26,13 @@ constexpr int kRequestChannels = 2;
 class CXAudioPlay : public XAudioPlay {
 public:
     bool Open(XAudioSpec& spec) override {
+        // 先整个退出再重新初始化子系统，确保每次都是全新状态，不会残留上一
+        // 次打开的设备参数。SDL_OpenAudio（老 API）内部会在需要时自动
+        // InitSubSystem，换成 SDL_OpenAudioDevice 之后这一步不再是隐式的，
+        // 漏掉这行会导致每次 Open() 都以 "Audio subsystem is not
+        // initialized" 失败（本地实测复现）。
         SDL_QuitSubSystem(SDL_INIT_AUDIO);
+        SDL_InitSubSystem(SDL_INIT_AUDIO);
 
         SDL_AudioSpec desired, obtained;
         SDL_zero(desired);
@@ -36,21 +42,33 @@ public:
         desired.samples = spec.samples;
         desired.userdata = this;
         desired.callback = AudioCallback;
-        // 传非空的 obtained：不让 SDL 在背后按自己猜的方式把数据转换成
-        // 设备原生格式——那一步的转换质量不可控。而是拿到设备真正的规格，
-        // 让上层用 libswresample 一次性、可控地转换到位。
-        if (SDL_OpenAudio(&desired, &obtained) < 0) {
-            cerr << "SDL_OpenAudio failed: " << SDL_GetError() << endl;
+        // 用 SDL_OpenAudioDevice（不是老的 SDL_OpenAudio）+ 只允许频率/
+        // 声道变化、不允许格式变化：下游 SDL_MixAudio() 只认 S16、重采样器
+        // 也写死输出 S16，采样格式绝对不能被 SDL 静默换掉——SDL_OpenAudio
+        // 传非空 obtained 时会把格式变更权完全交给 SDL，Windows 上 WASAPI
+        // 常见默认给 F32（实测复现：请求 S16，拿到的是 33056=AUDIO_F32），
+        // 拿到 S16 字节却被设备当 F32 解释，声音基本等于没有。限制
+        // allowed_changes 之后 SDL 自己的音频子系统会在内部做好格式转换，
+        // 交给我们的回调看到的还是稳定的 S16，不用在这个类里另外适配。
+        device_id_ = SDL_OpenAudioDevice(nullptr, 0, &desired, &obtained,
+                                          SDL_AUDIO_ALLOW_FREQUENCY_CHANGE |
+                                              SDL_AUDIO_ALLOW_CHANNELS_CHANGE);
+        if (device_id_ == 0) {
+            cerr << "SDL_OpenAudioDevice failed: " << SDL_GetError() << endl;
             return false;
         }
         spec.freq = obtained.freq;
         spec.channels = obtained.channels;
         spec.format = obtained.format;
-        SDL_PauseAudio(0);
+        SDL_PauseAudioDevice(device_id_, 0);
         return true;
     }
 
     void Close() override {
+        if (device_id_ != 0) {
+            SDL_CloseAudioDevice(device_id_);
+            device_id_ = 0;
+        }
         SDL_QuitSubSystem(SDL_INIT_AUDIO);
         {
             unique_lock<mutex> lock(mux_);
@@ -84,6 +102,9 @@ public:
             }
         }
     }
+
+private:
+    SDL_AudioDeviceID device_id_ = 0;
 };
 
 XAudioPlay* XAudioPlay::Instance() {
