@@ -52,19 +52,9 @@ XGLVideoWidget::~XGLVideoWidget() {
 void XGLVideoWidget::initializeGL() {
     initializeOpenGLFunctions();
 
-    // 排查 Windows 上一个几乎必现的访问违规崩溃（0xc0000005，出错模块显示
-    // unknown，看起来像是跳到了一个不属于任何已加载模块的地址）——先把实际
-    // 拿到的 GL 版本/厂商/渲染器字符串打出来，确认这台机器给的到底是不是
-    // 一个正常的、支持这份代码所需特性的上下文（比如某些虚拟机/远程桌面/
-    // 老显卡在没有合适驱动时，Windows 会退化到非常有限的软件 GL 实现）。
-    qWarning() << "XGLVideoWidget: GL_VERSION=" << reinterpret_cast<const char*>(glGetString(GL_VERSION))
-               << "GL_VENDOR=" << reinterpret_cast<const char*>(glGetString(GL_VENDOR))
-               << "GL_RENDERER=" << reinterpret_cast<const char*>(glGetString(GL_RENDERER));
-
-    // 这几步以前完全不检查返回值——着色器编译/链接失败会被静默吞掉，后面
-    // 拿一个没链接成功的 program 去 bind/draw，不同驱动的行为没有保证（有
-    // 的只是不画东西，有的直接崩）。哪一步失败都打日志，方便直接从这里定位，
-    // 而不是等崩溃了才回头怀疑到这里。
+    // 着色器编译/链接失败以前完全不检查返回值，会被静默吞掉——后面拿一个
+    // 没链接成功的 program 去 bind/draw，不同驱动的行为没有保证（有的只是
+    // 不画东西，有的直接崩，Windows 上曾经实测复现过后者）。
     if (!program_.addShaderFromSourceCode(QOpenGLShader::Vertex, kVertexShader)) {
         qWarning() << "XGLVideoWidget: vertex shader compile failed:" << program_.log();
     }
@@ -196,25 +186,11 @@ void XGLVideoWidget::paintGL() {
     // 混合这个 widget 的 FBO 时会切换 GL 状态），每帧都要重新 bind。
     program_.bind();
 
-    // 排查 Windows 上那个访问违规崩溃用的一次性逐步埋点：上一轮已经确认
-    // 崩溃发生在"拿到第一帧"和"画完第一帧"这两行日志之间——这里把中间
-    // 每一步都单独打一行日志，缩小到具体是哪一句 GL 调用。is_first_frame
-    // 只在这一次 paintGL() 调用里有效，跟 logged_first_frame_ 分开：后者
-    // 一旦置位就不会再变，前者只是本次调用要不要打印这些埋点的判断。
-    bool is_first_frame = !logged_first_frame_;
     if (has_frame && width > 0 && height > 0) {
-        if (is_first_frame) {
-            qWarning() << "XGLVideoWidget: first real frame" << width << "x" << height;
-            logged_first_frame_ = true;
-        }
         EnsureTextures(width, height);
-        if (is_first_frame) qWarning() << "XGLVideoWidget: EnsureTextures done";
         UploadPlane(tex_y_, 0, y.data(), ys, width, height);
-        if (is_first_frame) qWarning() << "XGLVideoWidget: UploadPlane(Y) done";
         UploadPlane(tex_u_, 1, u.data(), us, width / 2, height / 2);
-        if (is_first_frame) qWarning() << "XGLVideoWidget: UploadPlane(U) done";
         UploadPlane(tex_v_, 2, v.data(), vs, width / 2, height / 2);
-        if (is_first_frame) qWarning() << "XGLVideoWidget: UploadPlane(V) done";
     } else if (tex_width_ > 0 && tex_height_ > 0) {
         // 这次 paintGL 没有新帧（比如同一窗口里另一路视频更新、悬浮的分
         // 辨率/录像状态文字每秒刷新一次，都会触发一次跟这一格视频帧无关
@@ -237,22 +213,9 @@ void XGLVideoWidget::paintGL() {
     program_.setUniformValue(uni_y_, 0);
     program_.setUniformValue(uni_u_, 1);
     program_.setUniformValue(uni_v_, 2);
-    if (is_first_frame) qWarning() << "XGLVideoWidget: setUniformValue x3 done";
 
     vao_.bind();
-    if (is_first_frame) qWarning() << "XGLVideoWidget: vao_.bind() done, about to glDrawArrays";
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-    if (!logged_first_frame_error_check_) {
-        // 只在第一次真正画图之后查一次 glGetError——每帧都查会有性能开销，
-        // 这里只是要确认"画第一帧"这个动作本身有没有在 GL 层面留下错误。
-        GLenum err = glGetError();
-        if (err != GL_NO_ERROR) {
-            qWarning() << "XGLVideoWidget: glGetError after first glDrawArrays =" << err;
-        } else {
-            qWarning() << "XGLVideoWidget: first glDrawArrays OK, no GL error";
-        }
-        logged_first_frame_error_check_ = true;
-    }
     vao_.release();
 }
 

@@ -59,8 +59,6 @@ private:
     int pending_y_stride_ = 0, pending_u_stride_ = 0, pending_v_stride_ = 0;
     bool has_pending_frame_ = false;
     bool clear_requested_ = false;
-    bool logged_first_frame_ = false;             // 排查 Windows 崩溃用的一次性诊断埋点
-    bool logged_first_frame_error_check_ = false;
 };
 
 #endif  // XVIEWER_X_GL_VIDEO_WIDGET_H_

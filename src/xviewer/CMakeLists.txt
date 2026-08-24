@@ -46,13 +46,11 @@ endif()
 # while still on the build machine. scripts/package-linux.sh uses `patchelf`
 # to rewrite the RPATH to a relative "$ORIGIN/lib" only in the staged copy.
 
-# TODO: re-enable once the Windows RTSP crash fix (thread_count=1 for live
-# decode, see xlive_stream.cpp) is confirmed fixed on real Windows hardware.
-# Deliberately left OFF for now so the console window stays available to
-# show FFmpeg/crash diagnostics during that testing -- WIN32_EXECUTABLE TRUE
-# is what suppresses it (qt_add_executable already conditionally links the
-# Qt entry-point shim that supplies WinMain and forwards to main(), so no
-# source changes are needed when this gets turned back on).
-# if(WIN32)
-#     set_target_properties(xviewer PROPERTIES WIN32_EXECUTABLE TRUE)
-# endif()
+if(WIN32)
+    # Without this, Windows links xviewer as a console-subsystem app, so a
+    # console/terminal window pops up alongside the GUI on every launch even
+    # in a Release build. qt_add_executable already conditionally links the
+    # Qt entry-point shim that supplies WinMain and forwards to main(), so
+    # this alone is enough -- no source changes needed.
+    set_target_properties(xviewer PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
