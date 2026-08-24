@@ -73,6 +73,12 @@ public:
     // 那是 MainWindow 的概念）。
     void SetRecordingIndicator(bool recording, long long elapsed_ms);
 
+    // 只有回放网格里的格子才该接受"从系统文件管理器直接拖一个本地视频
+    // 文件进来"——直播网格的格子只认摄像头列表拖过来的那种（走
+    // ItemDropped），不该被一个随手拖进来的本地文件切换成回放模式，
+    // 由 TileGridView 在创建格子时按 is_live_grid_ 设置。
+    void SetAcceptsExternalFiles(bool accepts) { accepts_external_files_ = accepts; }
+
     void OnVideoFrame(const XVideoFrame& frame) override;
 
     // 回放控制转发：只在 IsPlaybackMode() 时有意义，否则是空操作/返回
@@ -112,6 +118,7 @@ private:
     XPlayback playback_;
     Mode mode_ = Mode::kEmpty;
     bool audio_enabled_ = false;
+    bool accepts_external_files_ = false;
     QWidget* container_ = nullptr;
     QString main_url_;
 

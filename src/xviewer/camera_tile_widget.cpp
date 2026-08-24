@@ -4,9 +4,11 @@
 #include <QDropEvent>
 #include <QLabel>
 #include <QListWidget>
+#include <QMimeData>
 #include <QMouseEvent>
 #include <QResizeEvent>
 #include <QTimer>
+#include <QUrl>
 
 CameraTileWidget::CameraTileWidget(QWidget* parent) : XGLVideoWidget(parent) {
     setMinimumSize(160, 120);
@@ -159,19 +161,31 @@ void CameraTileWidget::dragEnterEvent(QDragEnterEvent* event) { event->acceptPro
 
 void CameraTileWidget::dropEvent(QDropEvent* event) {
     auto* list = qobject_cast<QListWidget*>(event->source());
-    if (!list) {
+    if (list) {
+        int row = list->currentRow();
+        if (row < 0) {
+            return;
+        }
+        // 这一格自己不知道现在是"直播模式"还是"回放模式"（源列表现在到底是
+        // 摄像头列表还是录像文件列表），也不知道怎么根据行号查到真正的
+        // URL/文件路径——那是 MainWindow 的概念（它同时管着两份列表），这里
+        // 只负责把"拖拽这个动作本身"报告出去。
+        emit ItemDropped(this, list, row);
+        event->acceptProposedAction();
         return;
     }
-    int row = list->currentRow();
-    if (row < 0) {
-        return;
+
+    // 不是从本应用的列表拖过来的——只有回放网格的格子才认，直接从
+    // event->mimeData() 里取本地文件路径，不用经过 MainWindow（拖过来的
+    // 就是文件路径本身，不需要再反查任何列表）。
+    if (accepts_external_files_ && event->mimeData()->hasUrls()) {
+        for (const QUrl& url : event->mimeData()->urls()) {
+            if (url.isLocalFile() && OpenPlaybackFile(url.toLocalFile())) {
+                event->acceptProposedAction();
+                return;
+            }
+        }
     }
-    // 这一格自己不知道现在是"直播模式"还是"回放模式"（源列表现在到底是
-    // 摄像头列表还是录像文件列表），也不知道怎么根据行号查到真正的
-    // URL/文件路径——那是 MainWindow 的概念（它同时管着两份列表），这里
-    // 只负责把"拖拽这个动作本身"报告出去。
-    emit ItemDropped(this, list, row);
-    event->acceptProposedAction();
 }
 
 void CameraTileWidget::resizeEvent(QResizeEvent* event) {

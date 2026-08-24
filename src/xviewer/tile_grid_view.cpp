@@ -126,6 +126,7 @@ CameraTileWidget* TileGridView::CreateTile() {
     auto* tile = new CameraTileWidget(frame);
     tile->setStyleSheet("background-color: black;");
     tile->SetContainer(frame);
+    tile->SetAcceptsExternalFiles(!is_live_grid_);
     frame_layout->addWidget(tile);
 
     connect(tile, &CameraTileWidget::DoubleClicked, this, &TileGridView::OnTileDoubleClicked);
