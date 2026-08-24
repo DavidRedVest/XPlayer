@@ -181,19 +181,25 @@ void XGLVideoWidget::paintGL() {
     // 混合这个 widget 的 FBO 时会切换 GL 状态），每帧都要重新 bind。
     program_.bind();
 
+    // 排查 Windows 上那个访问违规崩溃用的一次性逐步埋点：上一轮已经确认
+    // 崩溃发生在"拿到第一帧"和"画完第一帧"这两行日志之间——这里把中间
+    // 每一步都单独打一行日志，缩小到具体是哪一句 GL 调用。is_first_frame
+    // 只在这一次 paintGL() 调用里有效，跟 logged_first_frame_ 分开：后者
+    // 一旦置位就不会再变，前者只是本次调用要不要打印这些埋点的判断。
+    bool is_first_frame = !logged_first_frame_;
     if (has_frame && width > 0 && height > 0) {
-        if (!logged_first_frame_) {
-            // 排查 Windows 上那个访问违规崩溃用的一次性埋点：确认渲染
-            // 流程真的跑到了"这一格拿到第一帧、开始建纹理/上传/画"这一步，
-            // 而不是更早的地方就已经出问题——崩溃发生在这行日志之前还是
-            // 之后，能把范围缩小一半。
+        if (is_first_frame) {
             qWarning() << "XGLVideoWidget: first real frame" << width << "x" << height;
             logged_first_frame_ = true;
         }
         EnsureTextures(width, height);
+        if (is_first_frame) qWarning() << "XGLVideoWidget: EnsureTextures done";
         UploadPlane(tex_y_, 0, y.data(), ys, width, height);
+        if (is_first_frame) qWarning() << "XGLVideoWidget: UploadPlane(Y) done";
         UploadPlane(tex_u_, 1, u.data(), us, width / 2, height / 2);
+        if (is_first_frame) qWarning() << "XGLVideoWidget: UploadPlane(U) done";
         UploadPlane(tex_v_, 2, v.data(), vs, width / 2, height / 2);
+        if (is_first_frame) qWarning() << "XGLVideoWidget: UploadPlane(V) done";
     } else if (tex_width_ > 0 && tex_height_ > 0) {
         // 这次 paintGL 没有新帧（比如同一窗口里另一路视频更新、悬浮的分
         // 辨率/录像状态文字每秒刷新一次，都会触发一次跟这一格视频帧无关
@@ -216,8 +222,10 @@ void XGLVideoWidget::paintGL() {
     program_.setUniformValue(uni_y_, 0);
     program_.setUniformValue(uni_u_, 1);
     program_.setUniformValue(uni_v_, 2);
+    if (is_first_frame) qWarning() << "XGLVideoWidget: setUniformValue x3 done";
 
     vao_.bind();
+    if (is_first_frame) qWarning() << "XGLVideoWidget: vao_.bind() done, about to glDrawArrays";
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     if (!logged_first_frame_error_check_) {
         // 只在第一次真正画图之后查一次 glGetError——每帧都查会有性能开销，
