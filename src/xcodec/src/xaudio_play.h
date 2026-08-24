@@ -65,6 +65,12 @@ protected:
     std::mutex mux_;
     unsigned char volume_ = 128;
 
+    // 设备真正打开后给到的采样格式（SDL_AudioFormat 值，比如
+    // AUDIO_S16SYS/AUDIO_F32SYS）——子类 Callback() 混音时需要知道这个
+    // 才能正确处理非 S16 的情况（SDL_MixAudio 只认 S16，别的格式要自己
+    // 按格式缩放音量）。
+    unsigned short device_format_ = 0x8010;  // AUDIO_S16LSB，Open() 之后回填成真实值
+
 private:
     void PushPcm(const unsigned char* data, int size, long long pts);
 
