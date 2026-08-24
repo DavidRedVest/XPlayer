@@ -1,6 +1,7 @@
 #ifndef XVIEWER_X_GL_VIDEO_WIDGET_H_
 #define XVIEWER_X_GL_VIDEO_WIDGET_H_
 
+#include <QOpenGLBuffer>
 #include <QOpenGLFunctions>
 #include <QOpenGLShaderProgram>
 #include <QOpenGLVertexArrayObject>
@@ -38,8 +39,16 @@ private:
     QOpenGLShaderProgram program_;
     // macOS 的 GL 实现即使在"legacy"2.1 上下文里，用 glVertexAttribPointer
     // 画图时也要求绑定一个 VAO，否则 glDrawArrays 会报 GL_INVALID_OPERATION
-    // （Windows/Linux 上不需要）。
+    // （Windows/Linux 上不需要，但绑了也没坏处）。
     QOpenGLVertexArrayObject vao_;
+    // 顶点/纹理坐标数据必须放在真正的显存缓冲区（VBO）里，不能让
+    // glVertexAttribPointer 直接指向 CPU 内存里的静态数组——绑了 VAO 之后
+    // 用裸指针在 Windows 的 NVIDIA 驱动上会崩（驱动把这个 CPU 地址当成显存
+    // 偏移量去解释，glDrawArrays 取顶点数据时访问越界）。macOS 的 Metal 后端
+    // 容忍这种写法，掩盖了这个问题，Windows 上是真崩溃，不只是"未定义行为
+    // 但凑合能跑"。
+    QOpenGLBuffer vertex_buffer_{QOpenGLBuffer::VertexBuffer};
+    QOpenGLBuffer texcoord_buffer_{QOpenGLBuffer::VertexBuffer};
     GLuint tex_y_ = 0, tex_u_ = 0, tex_v_ = 0;
     GLint uni_y_ = -1, uni_u_ = -1, uni_v_ = -1;
     int tex_width_ = 0, tex_height_ = 0;

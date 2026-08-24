@@ -95,11 +95,26 @@ void XGLVideoWidget::initializeGL() {
 
     vao_.create();
     vao_.bind();
-    glVertexAttribPointer(kVertexAttr, 2, GL_FLOAT, GL_FALSE, 0, kVertices);
+
+    vertex_buffer_.create();
+    vertex_buffer_.bind();
+    vertex_buffer_.allocate(kVertices, sizeof(kVertices));
+    glVertexAttribPointer(kVertexAttr, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
     glEnableVertexAttribArray(kVertexAttr);
-    glVertexAttribPointer(kTexCoordAttr, 2, GL_FLOAT, GL_FALSE, 0, kTexCoords);
+
+    texcoord_buffer_.create();
+    texcoord_buffer_.bind();
+    texcoord_buffer_.allocate(kTexCoords, sizeof(kTexCoords));
+    glVertexAttribPointer(kTexCoordAttr, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
     glEnableVertexAttribArray(kTexCoordAttr);
+
     vao_.release();
+    // 解绑之前必须先解绑 VBO 再解绑 VAO 的相反顺序会导致 VAO 记不住这个绑定
+    // 关系——上面 vao_.release() 之前两个 buffer 都还处于 bind 状态，VAO 会
+    // 把"当前绑定的 buffer"记进它自己的状态里，这正是 VAO 存在的意义。这里
+    // 显式再解绑一次只是为了不让全局状态里遗留一个"意外还绑着"的 buffer。
+    vertex_buffer_.release();
+    texcoord_buffer_.release();
 
     uni_y_ = program_.uniformLocation("tex_y");
     uni_u_ = program_.uniformLocation("tex_u");
