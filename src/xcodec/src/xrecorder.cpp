@@ -30,17 +30,39 @@ void ThreadSafeLocalTime(std::time_t t, std::tm& tm_buf) {
 #endif
 }
 
-// 文件名格式固定为 "<时间戳>_<序列号>_<窗口编号>.mp4"：时间戳是这一段
-// 文件开始写的时刻，序列号是这次录像（从点"录制"到点"关闭录制"算一次）
-// 里的分段计数（从 1 开始），窗口编号是触发这次录像的画面格子编号
-// （左到右、上到下）。
-std::string NextSegmentPath(const std::string& save_dir, int window_index, int seq) {
+// 封装格式只在这一个地方跟"文件后缀"这个字符串产生关联——FFmpeg 自己
+// 按 avformat_alloc_output_context2() 收到的文件名后缀猜格式（见
+// xmux.cpp），不需要另外指定格式名或者传任何 muxer 选项，三种格式的
+// 处理路径在这之后完全一样。
+const char* ExtensionFor(XRecordFormat format) {
+    switch (format) {
+        case XRecordFormat::kTs:
+            return "ts";
+        case XRecordFormat::kMkv:
+            return "mkv";
+        case XRecordFormat::kMp4:
+        default:
+            return "mp4";
+    }
+}
+
+// 文件名格式固定为 "<日期>_<时间>_[<摄像头名>_]win<窗口编号>_part<序列号>.<后缀>"：
+// 日期时间是这一段文件开始写的时刻，摄像头名是调用方传进来的（已经在
+// xviewer 那边做过合法字符过滤+截断，这里原样拼进去，为空就整段跳过、
+// 不留多余的下划线），窗口编号是触发这次录像的画面格子编号（左到右、
+// 上到下），序列号是这次录像（从点"录制"到点"关闭录制"算一次）里的
+// 分段计数（从 1 开始），后缀由录制格式决定。
+std::string NextSegmentPath(const std::string& save_dir, int window_index,
+                             const std::string& camera_name, int seq, XRecordFormat format) {
     auto t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     std::tm tm_buf{};
     ThreadSafeLocalTime(t, tm_buf);
     std::ostringstream ss;
-    ss << save_dir << "/" << std::put_time(&tm_buf, "%Y_%m_%d_%H_%M_%S") << "_" << seq << "_"
-       << window_index << ".mp4";
+    ss << save_dir << "/" << std::put_time(&tm_buf, "%Y%m%d_%H%M%S") << "_";
+    if (!camera_name.empty()) {
+        ss << camera_name << "_";
+    }
+    ss << "win" << window_index << "_part" << seq << "." << ExtensionFor(format);
     return ss.str();
 }
 
@@ -53,6 +75,8 @@ public:
     void set_url(std::string url) { url_ = std::move(url); }
     void set_save_dir(std::string dir) { save_dir_ = std::move(dir); }
     void set_window_index(int w) { window_index_ = w; }
+    void set_camera_name(std::string name) { camera_name_ = std::move(name); }
+    void set_format(XRecordFormat f) { format_ = f; }
     void set_segment_seconds(int s) { segment_seconds_ = s > 0 ? s : 2700; }
     bool is_recording() const { return is_recording_.load(std::memory_order_relaxed); }
 
@@ -96,8 +120,9 @@ private:
 
         int seq = 1;
         XMuxTask mux;
-        if (!mux.Open(NextSegmentPath(save_dir_, window_index_, seq).c_str(), vp->para,
-                      vp->time_base, audio_para, audio_tb, src_video_index, src_audio_index)) {
+        if (!mux.Open(
+                NextSegmentPath(save_dir_, window_index_, camera_name_, seq, format_).c_str(),
+                vp->para, vp->time_base, audio_para, audio_tb, src_video_index, src_audio_index)) {
             LOGERROR("XRecorder: mux.Open failed for " << save_dir_);
             demux_.Stop();
             return;
@@ -112,8 +137,10 @@ private:
             if (NowMs() - segment_start > static_cast<long long>(segment_seconds_) * 1000) {
                 segment_start = NowMs();
                 mux.Stop();
-                if (!mux.Open(NextSegmentPath(save_dir_, window_index_, ++seq).c_str(), vp->para,
-                              vp->time_base, audio_para, audio_tb, src_video_index,
+                if (!mux.Open(NextSegmentPath(save_dir_, window_index_, camera_name_, ++seq,
+                                               format_)
+                                  .c_str(),
+                              vp->para, vp->time_base, audio_para, audio_tb, src_video_index,
                               src_audio_index)) {
                     LOGERROR("XRecorder: mux.Open failed while rolling segment for " << save_dir_);
                     break;
@@ -133,6 +160,8 @@ private:
     std::string url_;
     std::string save_dir_;
     int window_index_ = 0;
+    std::string camera_name_;
+    XRecordFormat format_ = XRecordFormat::kMp4;
     int segment_seconds_ = 2700;
     std::atomic<bool> is_recording_{false};
     std::atomic<long long> start_time_ms_{-1};
@@ -152,7 +181,7 @@ XRecorder::~XRecorder() {
 }
 
 bool XRecorder::Start(const char* url, const char* save_dir, int window_index,
-                      int segment_seconds) {
+                      const char* camera_name, XRecordFormat format, int segment_seconds) {
     if (!url || !*url || !save_dir || !*save_dir) {
         LOGERROR("XRecorder::Start: url/save_dir must not be empty");
         return false;
@@ -161,6 +190,8 @@ bool XRecorder::Start(const char* url, const char* save_dir, int window_index,
     impl_->worker.set_url(url);
     impl_->worker.set_save_dir(save_dir);
     impl_->worker.set_window_index(window_index);
+    impl_->worker.set_camera_name(camera_name ? camera_name : "");
+    impl_->worker.set_format(format);
     impl_->worker.set_segment_seconds(segment_seconds);
     impl_->worker.Start();
     return true;

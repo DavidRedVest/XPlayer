@@ -3,14 +3,18 @@
 #include <cmath>
 #include <vector>
 
+#include <QAbstractButton>
+#include <QActionGroup>
 #include <QContextMenuEvent>
 #include <QGridLayout>
 #include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QVBoxLayout>
 
 #include "camera_tile_widget.h"
+#include "file_utils.h"
 #include "recording_manager.h"
 
 namespace {
@@ -65,8 +69,12 @@ void TileGridView::contextMenuEvent(QContextMenuEvent* event) {
 
     QMenu menu(this);
     QAction* close_action = nullptr;
+    QAction* snapshot_action = nullptr;
     if (tile && tile->IsActive()) {
         close_action = menu.addAction("关闭");
+        // 直播、回放都能截图（跟录制不一样，截图不需要"正在直播的主码流"
+        // 这个前提），所以不放进下面 is_live_grid_ 那个专属分支里。
+        snapshot_action = menu.addAction("截图");
         menu.addSeparator();
     }
     QAction* a1 = menu.addAction("1 画面");
@@ -80,16 +88,55 @@ void TileGridView::contextMenuEvent(QContextMenuEvent* event) {
     QAction* stop_current_action = nullptr;
     QAction* record_all_action = nullptr;
     QAction* stop_all_action = nullptr;
+    QAction* format_ts_action = nullptr;
+    QAction* format_mkv_action = nullptr;
+    QAction* format_mp4_action = nullptr;
     if (is_live_grid_) {
         menu.addSeparator();
+        // 只影响之后新开始的录像，不打断正在写的文件（RecordingManager::Start()
+        // 每次都现查 Format()，已经在录的窗口继续用它开始时的格式）。
+        QMenu* format_menu = menu.addMenu("录制格式");
+        auto* format_group = new QActionGroup(format_menu);
+        format_group->setExclusive(true);
+        format_ts_action = format_menu->addAction("TS");
+        format_mkv_action = format_menu->addAction("MKV");
+        format_mp4_action = format_menu->addAction("MP4");
+        for (QAction* a : {format_ts_action, format_mkv_action, format_mp4_action}) {
+            a->setCheckable(true);
+            format_group->addAction(a);
+        }
+        switch (RecordingManager::Format()) {
+            case XRecordFormat::kTs:
+                format_ts_action->setChecked(true);
+                break;
+            case XRecordFormat::kMkv:
+                format_mkv_action->setChecked(true);
+                break;
+            case XRecordFormat::kMp4:
+            default:
+                format_mp4_action->setChecked(true);
+                break;
+        }
+
         record_current_action = menu.addAction("录制当前画面");
         stop_current_action = menu.addAction("关闭当前录制");
         record_all_action = menu.addAction("录制所有画面");
         stop_all_action = menu.addAction("关闭所有录制");
     }
     QAction* chosen = menu.exec(event->globalPos());
+    // chosen 在"点别处取消菜单"时是 nullptr——这时候必须整段跳过下面的判断，
+    // 不能让 nullptr 去跟下面这些"当前网格/状态下压根没建出来、同样是
+    // nullptr"的 QAction*（比如回放网格里的 record_current_action、非活跃
+    // 格子上的 close_action）比较，不然会被误判成"选中了它"、把对应操作
+    // 触发一遍。
+    if (!chosen) {
+        event->accept();
+        return;
+    }
     if (chosen == close_action) {
         tile->CloseStream();
+    } else if (chosen == snapshot_action) {
+        OnSnapshot(tile);
     } else if (chosen == a1) {
         SetGridSize(1);
     } else if (chosen == a4) {
@@ -110,6 +157,12 @@ void TileGridView::contextMenuEvent(QContextMenuEvent* event) {
         OnRecordAll();
     } else if (chosen == stop_all_action) {
         OnStopAllRecord();
+    } else if (chosen == format_ts_action) {
+        RecordingManager::SetFormat(XRecordFormat::kTs);
+    } else if (chosen == format_mkv_action) {
+        RecordingManager::SetFormat(XRecordFormat::kMkv);
+    } else if (chosen == format_mp4_action) {
+        RecordingManager::SetFormat(XRecordFormat::kMp4);
     }
     event->accept();
 }
@@ -132,6 +185,7 @@ CameraTileWidget* TileGridView::CreateTile() {
     connect(tile, &CameraTileWidget::DoubleClicked, this, &TileGridView::OnTileDoubleClicked);
     connect(tile, &CameraTileWidget::Selected, this, &TileGridView::OnTileSelected);
     connect(tile, &CameraTileWidget::ItemDropped, this, &TileGridView::ItemDropped);
+    connect(tile, &CameraTileWidget::SnapshotSaved, this, &TileGridView::OnSnapshotSaved);
     return tile;
 }
 
@@ -261,13 +315,14 @@ void TileGridView::OnRecordCurrent() {
     if (window_index < 0) {
         return;
     }
-    RecordingManager::Instance()->Start(window_index, selected_tile_->MainUrl());
+    RecordingManager::Instance()->Start(window_index, selected_tile_->MainUrl(),
+                                         selected_tile_->CameraName());
 }
 
 void TileGridView::OnRecordAll() {
     for (int i = 0; i < kMaxTiles; ++i) {
         if (tiles_[i] && tiles_[i]->IsActive() && !tiles_[i]->IsPlaybackMode()) {
-            RecordingManager::Instance()->Start(i, tiles_[i]->MainUrl());
+            RecordingManager::Instance()->Start(i, tiles_[i]->MainUrl(), tiles_[i]->CameraName());
         }
     }
 }
@@ -284,3 +339,26 @@ void TileGridView::OnStopCurrentRecord() {
 }
 
 void TileGridView::OnStopAllRecord() { RecordingManager::Instance()->StopAll(); }
+
+void TileGridView::OnSnapshot(CameraTileWidget* tile) {
+    int window_index = WindowIndexOf(tile);
+    if (window_index < 0) {
+        return;
+    }
+    QString path = RecordingManager::BuildScreenshotPath(window_index, tile->CameraName());
+    tile->RequestSnapshot(path);
+}
+
+void TileGridView::OnSnapshotSaved(const QString& path, bool ok) {
+    if (!ok) {
+        QMessageBox::warning(this, "截图", "截图失败");
+        return;
+    }
+    QMessageBox box(QMessageBox::Information, "截图", QString("已保存到：\n%1").arg(path),
+                     QMessageBox::Ok, this);
+    QAbstractButton* reveal_btn = box.addButton("打开文件所在位置", QMessageBox::ActionRole);
+    box.exec();
+    if (box.clickedButton() == reveal_btn) {
+        RevealInFileManager(path);
+    }
+}

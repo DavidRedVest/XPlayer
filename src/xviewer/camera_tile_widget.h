@@ -68,6 +68,11 @@ public:
     QString MainUrl() const { return main_url_; }
     void SetMainUrl(const QString& url) { main_url_ = url; }
 
+    // 跟 main_url_ 同时机设置——录像文件名里拼摄像头名字用，方便事后按
+    // 名字找文件；这一格自己不查 CameraConfig，道理跟 main_url_ 一样。
+    QString CameraName() const { return camera_name_; }
+    void SetCameraName(const QString& name) { camera_name_ = name; }
+
     // MainWindow 每秒推一次这一格对应的窗口是不是正在被录像、录了多久——
     // 纯展示用，这一格自己不查 RecordingManager（它不知道自己的窗口编号，
     // 那是 MainWindow 的概念）。
@@ -121,6 +126,7 @@ private:
     bool accepts_external_files_ = false;
     QWidget* container_ = nullptr;
     QString main_url_;
+    QString camera_name_;
 
     // OnVideoFrame 在解码线程上被调用，UpdateVideoInfo 由 GUI 线程的定时器
     // 调用，用原子量跨线程传帧率统计，不用另开锁。

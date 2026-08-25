@@ -1,8 +1,11 @@
 #include "x_gl_video_widget.h"
 
 #include <QDebug>
+#include <QImage>
 #include <QMetaObject>
 #include <cstring>
+
+#include "xcodec/xsnapshot.h"
 
 namespace {
 
@@ -217,6 +220,53 @@ void XGLVideoWidget::paintGL() {
     vao_.bind();
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     vao_.release();
+
+    if (!pending_snapshot_path_.isEmpty()) {
+        QString path = pending_snapshot_path_;
+        pending_snapshot_path_.clear();
+        SaveSnapshot(path);
+    }
+}
+
+void XGLVideoWidget::RequestSnapshot(const QString& path) {
+    if (tex_width_ <= 0 || tex_height_ <= 0) {
+        emit SnapshotSaved(path, false);
+        return;
+    }
+    pending_snapshot_path_ = path;
+    update();
+}
+
+void XGLVideoWidget::SaveSnapshot(const QString& path) {
+    // tex_y_/tex_u_/tex_v_ 是按视频源分辨率建的（EnsureTextures 里用的是
+    // 解码帧的 width/height，不是这一格在屏幕上显示的大小），所以从纹理
+    // 读回来的截图天然就是原始分辨率，不用另外在解码回调那条热路径上为了
+    // "万一要截图"常驻多存一份 CPU 侧拷贝。
+    if (tex_width_ <= 0 || tex_height_ <= 0) {
+        emit SnapshotSaved(path, false);
+        return;
+    }
+    int uv_w = tex_width_ / 2;
+    int uv_h = tex_height_ / 2;
+    std::vector<unsigned char> y(static_cast<size_t>(tex_width_) * tex_height_);
+    std::vector<unsigned char> u(static_cast<size_t>(uv_w) * uv_h);
+    std::vector<unsigned char> v(static_cast<size_t>(uv_w) * uv_h);
+
+    glBindTexture(GL_TEXTURE_2D, tex_y_);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_UNSIGNED_BYTE, y.data());
+    glBindTexture(GL_TEXTURE_2D, tex_u_);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_UNSIGNED_BYTE, u.data());
+    glBindTexture(GL_TEXTURE_2D, tex_v_);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RED, GL_UNSIGNED_BYTE, v.data());
+
+    std::vector<unsigned char> rgb(static_cast<size_t>(tex_width_) * tex_height_ * 3);
+    bool ok = ConvertYuv420pToRgb24(y.data(), tex_width_, u.data(), uv_w, v.data(), uv_w,
+                                     tex_width_, tex_height_, rgb.data());
+    if (ok) {
+        QImage image(rgb.data(), tex_width_, tex_height_, tex_width_ * 3, QImage::Format_RGB888);
+        ok = image.save(path, "PNG");
+    }
+    emit SnapshotSaved(path, ok);
 }
 
 void XGLVideoWidget::OnVideoFrame(const XVideoFrame& frame) {

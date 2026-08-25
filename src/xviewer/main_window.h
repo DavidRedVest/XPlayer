@@ -3,9 +3,11 @@
 
 #include <QWidget>
 
+class QLabel;
 class QListWidget;
 class QListWidgetItem;
 class QPushButton;
+class QSlider;
 class CameraTileWidget;
 class PlaybackControlBar;
 class TileGridView;
@@ -45,12 +47,15 @@ private:
     void ToggleFullScreen();
     void ToggleLeftPanel();
     void ToggleMode();
+    void OnVolumeChanged(int value);
 
     QListWidget* camera_list_;
     QListWidget* recordings_list_;
     QWidget* camera_panel_;       // 摄像头列表 + 增/改/删按钮，实时预览模式下显示
     QWidget* recordings_panel_;   // 录像文件列表，录像回放模式下显示
     QPushButton* mode_toggle_btn_;
+    QSlider* volume_slider_;  // 全局音量——直播/回放都看得到，不属于任何一个网格
+    QLabel* volume_value_label_;  // 滑块旁边跟着显示当前百分比数字
     QWidget* left_panel_;
     TileGridView* live_grid_;
     TileGridView* playback_grid_;

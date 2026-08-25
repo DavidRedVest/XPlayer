@@ -56,6 +56,8 @@ private:
     void OnRecordAll();
     void OnStopCurrentRecord();
     void OnStopAllRecord();
+    void OnSnapshot(CameraTileWidget* tile);
+    void OnSnapshotSaved(const QString& path, bool ok);
 
     bool is_live_grid_;
     QGridLayout* grid_layout_;

@@ -4,6 +4,8 @@ set(XCODEC_PUBLIC_HEADERS
     include/xcodec/xlive_stream.h
     include/xcodec/xrecorder.h
     include/xcodec/xplayback.h
+    include/xcodec/xaudio_control.h
+    include/xcodec/xsnapshot.h
 )
 
 set(XCODEC_SOURCES
@@ -29,9 +31,11 @@ set(XCODEC_SOURCES
     src/xaudio_play.cpp
     src/xaudio_tempo.h
     src/xaudio_tempo.cpp
+    src/xaudio_control.cpp
     src/xlive_stream.cpp
     src/xrecorder.cpp
     src/xplayback.cpp
+    src/xsnapshot.cpp
 )
 
 add_library(xcodec SHARED ${XCODEC_SOURCES} ${XCODEC_PUBLIC_HEADERS})
@@ -52,9 +56,10 @@ find_library(AVCODEC_LIB avcodec PATHS ${FFMPEG_ROOT}/lib REQUIRED NO_DEFAULT_PA
 find_library(AVUTIL_LIB avutil PATHS ${FFMPEG_ROOT}/lib REQUIRED NO_DEFAULT_PATH)
 find_library(AVFILTER_LIB avfilter PATHS ${FFMPEG_ROOT}/lib REQUIRED NO_DEFAULT_PATH)
 find_library(SWRESAMPLE_LIB swresample PATHS ${FFMPEG_ROOT}/lib REQUIRED NO_DEFAULT_PATH)
+find_library(SWSCALE_LIB swscale PATHS ${FFMPEG_ROOT}/lib REQUIRED NO_DEFAULT_PATH)
 find_library(SDL2_LIB SDL2 PATHS ${COMMON_LIBS_ROOT}/lib REQUIRED NO_DEFAULT_PATH)
 
-target_link_libraries(xcodec PRIVATE ${AVFORMAT_LIB} ${AVCODEC_LIB} ${AVUTIL_LIB} ${AVFILTER_LIB} ${SWRESAMPLE_LIB} ${SDL2_LIB})
+target_link_libraries(xcodec PRIVATE ${AVFORMAT_LIB} ${AVCODEC_LIB} ${AVUTIL_LIB} ${AVFILTER_LIB} ${SWRESAMPLE_LIB} ${SWSCALE_LIB} ${SDL2_LIB})
 
 set_target_properties(xcodec PROPERTIES
     CXX_VISIBILITY_PRESET default

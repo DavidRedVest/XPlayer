@@ -15,6 +15,8 @@ qt_add_executable(xviewer
     camera_config.cpp
     camera_edit_dialog.h
     camera_edit_dialog.cpp
+    file_utils.h
+    file_utils.cpp
     recording_manager.h
     recording_manager.cpp
     tile_grid_view.h

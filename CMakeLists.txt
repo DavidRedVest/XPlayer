@@ -23,6 +23,7 @@ add_subdirectory(src/xcodec)
 
 if(PLAYER_V2_BUILD_TOOLS)
     add_subdirectory(tools/xcodec_probe)
+    add_subdirectory(tools/xrecorder_probe)
 endif()
 
 if(PLAYER_V2_BUILD_XVIEWER)

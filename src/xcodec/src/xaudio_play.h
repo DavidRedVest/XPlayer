@@ -48,7 +48,8 @@ public:
     virtual bool Open(XAudioSpec& spec) = 0;
     virtual void Close() = 0;
 
-    void set_volume(int v) { volume_ = v; }
+    void set_volume(int v) { volume_ = static_cast<unsigned char>(v); }
+    int volume() const { return volume_; }
 
 protected:
     XAudioPlay() = default;

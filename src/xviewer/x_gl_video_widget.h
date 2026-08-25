@@ -6,6 +6,7 @@
 #include <QOpenGLShaderProgram>
 #include <QOpenGLVertexArrayObject>
 #include <QOpenGLWidget>
+#include <QString>
 #include <mutex>
 #include <vector>
 
@@ -26,6 +27,16 @@ public:
     // 清空画面（比如断开连接后），下一帧 paintGL 会画黑屏。
     void Clear();
 
+    // 请求把当前画面存成 PNG。真正的读取/转换/写文件发生在下一次 paintGL()
+    // 里（必须在持有 GL 上下文的线程上做 glGetTexImage），所以是异步的——
+    // 通过 SnapshotSaved 信号通知调用方成不成功。截的是纹理本身的分辨率
+    // （也就是视频源分辨率），不是这一格在屏幕上显示的大小；从没收到过
+    // 帧（黑屏）时直接以失败通知，不用等。
+    void RequestSnapshot(const QString& path);
+
+signals:
+    void SnapshotSaved(const QString& path, bool ok);
+
 protected:
     void initializeGL() override;
     void paintGL() override;
@@ -35,6 +46,7 @@ private:
     void EnsureTextures(int width, int height);
     void UploadPlane(GLuint tex, int unit, const unsigned char* data, int stride,
                       int width, int height);
+    void SaveSnapshot(const QString& path);
 
     QOpenGLShaderProgram program_;
     // macOS 的 GL 实现即使在"legacy"2.1 上下文里，用 glVertexAttribPointer
@@ -59,6 +71,10 @@ private:
     int pending_y_stride_ = 0, pending_u_stride_ = 0, pending_v_stride_ = 0;
     bool has_pending_frame_ = false;
     bool clear_requested_ = false;
+
+    // 只在 GUI 线程上碰（RequestSnapshot 由 GUI 线程调用，paintGL 也跑在
+    // GUI 线程），不需要跟上面那些解码线程/GUI 线程共享的字段一样加锁。
+    QString pending_snapshot_path_;
 };
 
 #endif  // XVIEWER_X_GL_VIDEO_WIDGET_H_
