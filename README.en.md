@@ -10,9 +10,11 @@ Currently developed and verified on **macOS**. The codebase itself has no OS-spe
 
 - **Multi-camera live grid** — 1/4/9/16-way split-screen preview, drag a camera from the list onto any tile to open it (sub-stream, for preview bandwidth).
 - **Recording** — manual per-tile or per-grid start/stop, main-stream quality, automatic segment rotation (default 45 min/segment), written next to the executable.
+- **Switchable recording container** — TS / MKV / MP4 (right-click "Recording format" submenu), default MP4. TS/MKV don't depend on a clean finish to stay playable — whatever was already written survives a killed process or power loss; MP4's index (`moov`) is only written in one shot at the end, so an interrupted MP4 segment is essentially unrecoverable.
 - **Recording playback** — a second, independent grid page for browsing and playing back recorded files: play/pause, ±1 frame step, ±10s skip, seek slider, and variable playback speed (0.25x–4x) with **pitch-preserving audio** (FFmpeg's `atempo` filter, WSOLA-based — same technique VLC/mpv use — so sped-up audio doesn't sound high-pitched/chipmunked).
 - **Live and playback are fully independent pages** — switching between them never stops streams or recordings running in the background.
-- **Per-tile audio selection** — click a tile to make it the audible one; live audio always follows the current single-click selection.
+- **Per-tile audio selection + global volume** — click a tile to make it the audible one; live audio always follows the current single-click selection. A top-bar slider (with a percentage readout) controls global volume, persisted across restarts.
+- **Snapshot** — right-click "Screenshot" on any live or playback tile, saved as PNG at the video source's native resolution (not the tile's on-screen size) to a dedicated `screenshots` directory; same-second collisions get an auto-incremented suffix instead of overwriting.
 - **Fullscreen** — double-click a tile to fill the grid with it, or use the real OS-level fullscreen toggle (excludes the camera list panel).
 - **Camera list management** — add/edit/delete cameras (name + main/sub RTSP URLs), persisted via `QSettings`.
 - **Per-tile overlays** — live resolution/fps readout, recording indicator with elapsed time.
@@ -25,7 +27,7 @@ Two CMake targets in one repo:
 - **`xcodec`** (`src/xcodec/`) — the decode/encode engine, built as a shared library, no Qt dependency. Wraps FFmpeg (demux/decode/encode/mux/filter) and SDL2 (video render + audio output) behind a small public C++ interface (`include/xcodec/`: `XLiveStream`, `XPlayback`, `XRecorder`, `XVideoFrame`/`IXVideoSink`). Internally built around threaded pipeline stages (demux → decode → render/audio) chained via a producer/consumer pattern, mirroring the predecessor's `XThread`-based design but rewritten from scratch.
 - **`xviewer`** (`src/xviewer/`) — the Qt6 Widgets GUI application. `MainWindow` owns two independent `TileGridView` pages (live / playback), each managing its own array of `CameraTileWidget` tiles (a `QOpenGLWidget`-based YUV renderer that also owns an `XLiveStream` or `XPlayback` instance per tile).
 
-A small CLI tool, `tools/xcodec_probe`, exercises `xcodec` directly (open a stream, print frame stats, exit) without building the GUI — useful for isolating decode-engine issues from GUI issues.
+Two small CLI tools exercise `xcodec` directly without building the GUI, useful for isolating decode-engine issues from GUI issues: `tools/xcodec_probe` (open a stream, print frame stats, exit) and `tools/xrecorder_probe` (record for a given duration in a given container format, exercising `XRecorder` itself).
 
 ## Building
 
@@ -73,7 +75,12 @@ src/
   xviewer/                Qt6 GUI application
 tools/
   xcodec_probe/           CLI smoke-test tool for the xcodec engine
+  xrecorder_probe/        CLI smoke-test tool for XRecorder
 ```
+
+## Changelog
+
+Version history, what changed in each release, and problems hit (with solutions) during development: see [CHANGELOG.md](CHANGELOG.md).
 
 ## Platform status
 
