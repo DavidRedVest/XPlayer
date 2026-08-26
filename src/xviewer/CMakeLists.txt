@@ -2,6 +2,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets OpenGLWidgets Svg)
+find_package(OpenGL REQUIRED)
 
 qt_add_executable(xviewer
     main.cpp
@@ -32,6 +33,13 @@ target_link_libraries(xviewer PRIVATE
     Qt6::Widgets
     Qt6::OpenGLWidgets
     Qt6::Svg
+    # QOpenGLFunctions only wraps the GLES2-compatible subset -- glGetTexImage
+    # (used by XGLVideoWidget::SaveSnapshot() to read a tile's texture back
+    # for screenshots) is desktop-only and isn't in it, so it's called as a
+    # plain GL symbol. That resolves fine on macOS/Linux via Qt6::OpenGLWidgets'
+    # own transitive linkage, but Windows needs opengl32.lib linked explicitly
+    # or it's an unresolved external at link time.
+    OpenGL::GL
 )
 
 if(APPLE)
